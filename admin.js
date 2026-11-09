@@ -1,10 +1,6 @@
-
 "use strict";
 
-/* =========================================
-   ÉLORA ADMIN STUDIO
-   Demo frontend data — not a production DB
-========================================= */
+/* ÉLORA ADMIN STUDIO — FRONTEND DEMO */
 
 const STORAGE = {
   theme: "elora-admin-theme",
@@ -22,11 +18,11 @@ const demoUsers = [
 ];
 
 const orders = [
-  { id: "EL-2048", name: "Ayesha Khan", email: "ayesha@example.com", date: "Nov 08, 2026", amount: 12500, status: "Completed" },
-  { id: "EL-2047", name: "Hamza Ali", email: "hamza@example.com", date: "Nov 08, 2026", amount: 8500, status: "Pending" },
-  { id: "EL-2046", name: "Sara Ahmed", email: "sara@example.com", date: "Nov 07, 2026", amount: 16900, status: "Completed" },
-  { id: "EL-2045", name: "Usman Malik", email: "usman@example.com", date: "Nov 07, 2026", amount: 4200, status: "Cancelled" },
-  { id: "EL-2044", name: "Zara Sheikh", email: "zara@example.com", date: "Nov 06, 2026", amount: 7800, status: "Completed" }
+  { id: "EL-2048", name: "Ayesha Khan", date: "Nov 08, 2026", amount: 12500, status: "Completed" },
+  { id: "EL-2047", name: "Hamza Ali", date: "Nov 08, 2026", amount: 8500, status: "Pending" },
+  { id: "EL-2046", name: "Sara Ahmed", date: "Nov 07, 2026", amount: 16900, status: "Completed" },
+  { id: "EL-2045", name: "Usman Malik", date: "Nov 07, 2026", amount: 4200, status: "Cancelled" },
+  { id: "EL-2044", name: "Zara Sheikh", date: "Nov 06, 2026", amount: 7800, status: "Completed" }
 ];
 
 const topProducts = [
@@ -48,11 +44,44 @@ const escapeHTML = value =>
     "'": "&#39;"
   })[char]);
 
+function readStorage(key, fallback = null) {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value;
+  } catch (error) {
+    console.warn("Storage unavailable:", error);
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.warn("Could not save data:", error);
+    return false;
+  }
+}
+
 function readUsers() {
   try {
-    const stored = localStorage.getItem(STORAGE.users);
-    return stored === null ? [...demoUsers] : JSON.parse(stored);
-  } catch {
+    const stored = readStorage(STORAGE.users);
+    if (!stored) return [...demoUsers];
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [...demoUsers];
+
+    return parsed.filter(user =>
+      user &&
+      (typeof user.id === "string" || typeof user.id === "number") &&
+      typeof user.name === "string" &&
+      typeof user.email === "string" &&
+      typeof user.joined === "string" &&
+      ["Active", "Inactive"].includes(user.status)
+    );
+  } catch (error) {
+    console.warn("Invalid saved users:", error);
     return [...demoUsers];
   }
 }
@@ -63,9 +92,7 @@ let sourceChart = null;
 let analyticsChart = null;
 let toastTimer = null;
 
-function saveUsers() {
-  localStorage.setItem(STORAGE.users, JSON.stringify(users));
-}
+/* NOTIFICATIONS */
 
 function showToast(message) {
   const toast = document.getElementById("toast");
@@ -77,14 +104,14 @@ function showToast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     toast.classList.remove("show");
-  }, 2600);
+  }, 2800);
 }
 
 /* THEME */
 
 function applyTheme(theme) {
   document.body.classList.toggle("dark-theme", theme === "dark");
-  localStorage.setItem(STORAGE.theme, theme);
+  writeStorage(STORAGE.theme, theme);
 
   if (revenueChart || sourceChart || analyticsChart) {
     updateChartTheme();
@@ -92,11 +119,11 @@ function applyTheme(theme) {
 }
 
 function toggleTheme() {
-  const nextTheme = document.body.classList.contains("dark-theme")
+  const next = document.body.classList.contains("dark-theme")
     ? "light"
     : "dark";
 
-  applyTheme(nextTheme);
+  applyTheme(next);
 }
 
 function chartTextColor() {
@@ -116,20 +143,29 @@ function updateChartTheme() {
   [revenueChart, analyticsChart].forEach(chart => {
     if (!chart) return;
 
-    chart.options.scales.x.ticks.color = color;
-    chart.options.scales.y.ticks.color = color;
-    chart.options.scales.x.grid.color = grid;
-    chart.options.scales.y.grid.color = grid;
+    if (chart.options.scales.x?.ticks) {
+      chart.options.scales.x.ticks.color = color;
+    }
+
+    if (chart.options.scales.y?.ticks) {
+      chart.options.scales.y.ticks.color = color;
+    }
+
+    if (chart.options.scales.x?.grid) {
+      chart.options.scales.x.grid.color = grid;
+    }
+
+    if (chart.options.scales.y?.grid) {
+      chart.options.scales.y.grid.color = grid;
+    }
+
     chart.update("none");
   });
 
-  if (sourceChart) {
-    sourceChart.options.plugins.legend.labels.color = color;
-    sourceChart.update("none");
-  }
+  if (sourceChart) sourceChart.update("none");
 }
 
-/* ANALYTICS */
+/* CHART DATA */
 
 function generateRevenueData(days) {
   const labels = [];
@@ -143,7 +179,10 @@ function generateRevenueData(days) {
     labels.push(
       days === 7
         ? date.toLocaleDateString("en", { weekday: "short" })
-        : date.toLocaleDateString("en", { day: "numeric", month: "short" })
+        : date.toLocaleDateString("en", {
+            day: "numeric",
+            month: "short"
+          })
     );
 
     revenue.push(Math.round(9000 + Math.random() * 23000));
@@ -153,11 +192,14 @@ function generateRevenueData(days) {
   return { labels, revenue, previous };
 }
 
-function chartOptions() {
+function getChartOptions() {
   return {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: { intersect: false, mode: "index" },
+    interaction: {
+      intersect: false,
+      mode: "index"
+    },
     plugins: {
       legend: {
         position: "top",
@@ -165,7 +207,6 @@ function chartOptions() {
         labels: {
           usePointStyle: true,
           boxWidth: 7,
-          boxHeight: 7,
           color: chartTextColor(),
           font: { family: "DM Sans", size: 10 }
         }
@@ -174,8 +215,6 @@ function chartOptions() {
         backgroundColor: "#202334",
         padding: 12,
         cornerRadius: 8,
-        titleFont: { family: "DM Sans" },
-        bodyFont: { family: "DM Sans" },
         callbacks: {
           label: context =>
             `${context.dataset.label}: ${formatMoney(context.parsed.y)}`
@@ -185,7 +224,11 @@ function chartOptions() {
     scales: {
       x: {
         grid: { display: false },
-        ticks: { color: chartTextColor(), maxTicksLimit: 8, font: { size: 9 } },
+        ticks: {
+          color: chartTextColor(),
+          maxTicksLimit: 8,
+          font: { size: 9 }
+        },
         border: { display: false }
       },
       y: {
@@ -194,13 +237,16 @@ function chartOptions() {
         ticks: {
           color: chartTextColor(),
           font: { size: 9 },
-          callback: value => value >= 1000 ? `${value / 1000}k` : value
+          callback: value =>
+            value >= 1000 ? `${value / 1000}k` : value
         },
         border: { display: false }
       }
     }
   };
 }
+
+/* REVENUE CHART */
 
 function initRevenueChart() {
   const canvas = document.getElementById("revenue-chart");
@@ -217,15 +263,7 @@ function initRevenueChart() {
           label: "Current revenue",
           data: data.revenue,
           borderColor: "#8069ef",
-          backgroundColor: context => {
-            const chart = context.chart;
-            const { ctx, chartArea } = chart;
-            if (!chartArea) return "rgba(128,105,239,.12)";
-            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-            gradient.addColorStop(0, "rgba(128,105,239,.24)");
-            gradient.addColorStop(1, "rgba(128,105,239,0)");
-            return gradient;
-          },
+          backgroundColor: "rgba(128,105,239,.13)",
           fill: true,
           tension: .38,
           borderWidth: 2.5,
@@ -244,18 +282,22 @@ function initRevenueChart() {
         }
       ]
     },
-    options: chartOptions()
+    options: getChartOptions()
   });
 
   const period = document.getElementById("revenue-period");
+
   period?.addEventListener("change", () => {
     const next = generateRevenueData(Number(period.value));
+
     revenueChart.data.labels = next.labels;
     revenueChart.data.datasets[0].data = next.revenue;
     revenueChart.data.datasets[1].data = next.previous;
     revenueChart.update();
   });
 }
+
+/* ORDER SOURCE CHART */
 
 function initSourceChart() {
   const canvas = document.getElementById("source-chart");
@@ -280,13 +322,16 @@ function initSourceChart() {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: context => `${context.label}: ${context.parsed}%`
+            label: context =>
+              `${context.label}: ${context.parsed}%`
           }
         }
       }
     }
   });
 }
+
+/* ANALYTICS CHART */
 
 function initAnalyticsChart() {
   const canvas = document.getElementById("analytics-chart");
@@ -295,65 +340,41 @@ function initAnalyticsChart() {
   analyticsChart = new Chart(canvas, {
     type: "bar",
     data: {
-      labels: ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov"],
+      labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
       datasets: [
         {
           label: "Revenue (PKR)",
-          data: [210000, 280000, 250000, 340000, 390000, 440000],
-          backgroundColor: "#8069ef",
-          borderRadius: 6,
-          maxBarThickness: 28,
-          yAxisID: "y"
+          data: [120000, 145000, 132000, 180000, 165000, 210000, 195000, 240000, 220000, 275000, 260000, 310000],
+          backgroundColor: "rgba(128,105,239,.75)",
+          borderRadius: 6
         },
         {
           label: "Orders",
-          data: [28, 36, 33, 45, 53, 61],
-          type: "line",
-          borderColor: "#e9a05b",
-          backgroundColor: "#e9a05b",
-          tension: .35,
-          pointRadius: 3,
-          yAxisID: "y1"
+          data: [18, 22, 20, 29, 25, 34, 31, 39, 36, 44, 42, 50],
+          backgroundColor: "rgba(78,145,223,.75)",
+          borderRadius: 6
         }
       ]
     },
-    options: {
-      ...chartOptions(),
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: chartTextColor() }
-        },
-        y: {
-          position: "left",
-          beginAtZero: true,
-          grid: { color: chartGridColor() },
-          ticks: {
-            color: chartTextColor(),
-            callback: value => `${value / 1000}k`
-          }
-        },
-        y1: {
-          position: "right",
-          beginAtZero: true,
-          grid: { display: false },
-          ticks: { color: chartTextColor() }
-        }
-      }
-    }
+    options: getChartOptions()
   });
 }
 
-/* DASHBOARD CONTENT */
+/* DASHBOARD RENDERING */
 
 function renderStats() {
-  const revenue = orders
+  const completedRevenue = orders
     .filter(order => order.status === "Completed")
-    .reduce((sum, order) => sum + order.amount, 0);
+    .reduce((total, order) => total + order.amount, 0);
 
-  document.getElementById("total-revenue").textContent = formatMoney(revenue);
-  document.getElementById("total-orders").textContent = orders.length;
-  document.getElementById("total-customers").textContent = users.length;
+  document.getElementById("total-revenue").textContent =
+    formatMoney(completedRevenue);
+
+  document.getElementById("total-orders").textContent =
+    orders.length;
+
+  document.getElementById("total-customers").textContent =
+    users.length;
 }
 
 function renderOrders() {
@@ -363,15 +384,14 @@ function renderOrders() {
   body.innerHTML = orders.map(order => `
     <tr>
       <td><strong>${escapeHTML(order.id)}</strong></td>
-      <td>
-        <div class="customer-cell">
-          <div class="avatar avatar-purple">${escapeHTML(order.name.charAt(0))}</div>
-          <div><strong>${escapeHTML(order.name)}</strong><small>${escapeHTML(order.email)}</small></div>
-        </div>
-      </td>
+      <td>${escapeHTML(order.name)}</td>
       <td>${escapeHTML(order.date)}</td>
-      <td><strong>${formatMoney(order.amount)}</strong></td>
-      <td><span class="status-pill status-${order.status.toLowerCase()}">${escapeHTML(order.status)}</span></td>
+      <td>${formatMoney(order.amount)}</td>
+      <td>
+        <span class="status-pill status-${order.status.toLowerCase()}">
+          ${escapeHTML(order.status)}
+        </span>
+      </td>
     </tr>
   `).join("");
 }
@@ -382,11 +402,16 @@ function renderTopProducts() {
 
   container.innerHTML = topProducts.map(product => `
     <div class="top-product">
-      <img class="product-thumb" src="${product.image}" alt="${escapeHTML(product.name)}"
-        onerror="this.onerror=null;this.src='https://placehold.co/100x120/f0edf6/7662d9?text=ELORA'">
+      <img
+        class="product-thumb"
+        src="${product.image}"
+        alt="${escapeHTML(product.name)}"
+        loading="lazy"
+        onerror="this.style.visibility='hidden'"
+      >
       <div class="top-product-info">
         <strong>${escapeHTML(product.name)}</strong>
-        <small>${product.sold} items sold</small>
+        <small>${escapeHTML(product.category)} · ${product.sold} sold</small>
       </div>
       <strong>${formatMoney(product.revenue)}</strong>
     </div>
@@ -395,10 +420,21 @@ function renderTopProducts() {
 
 /* USER MANAGEMENT */
 
+function saveUsers() {
+  if (!writeStorage(STORAGE.users, JSON.stringify(users))) {
+    showToast("Could not save changes in this browser.");
+  }
+}
+
 function renderUserStats() {
   const active = users.filter(user => user.status === "Active").length;
-  const month = new Date().toISOString().slice(0, 7);
-  const newUsers = users.filter(user => user.joined.startsWith(month)).length;
+
+  const now = new Date();
+  const newUsers = users.filter(user => {
+    const joined = new Date(user.joined);
+    return joined.getMonth() === now.getMonth() &&
+      joined.getFullYear() === now.getFullYear();
+  }).length;
 
   document.getElementById("user-total").textContent = users.length;
   document.getElementById("user-active").textContent = active;
@@ -419,6 +455,7 @@ function renderUsers() {
       user.email.toLowerCase().includes(term);
 
     const matchesStatus = status === "all" || user.status === status;
+
     return matchesText && matchesStatus;
   });
 
@@ -426,7 +463,13 @@ function renderUsers() {
     `Showing ${filtered.length} of ${users.length} users`;
 
   if (!filtered.length) {
-    body.innerHTML = `<tr><td colspan="6" class="empty-row">No matching customers found.</td></tr>`;
+    body.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-row">
+          No matching customers found.
+        </td>
+      </tr>
+    `;
     return;
   }
 
@@ -434,14 +477,20 @@ function renderUsers() {
     <tr>
       <td>
         <div class="customer-cell">
-          <div class="avatar avatar-purple">${escapeHTML(user.name.charAt(0).toUpperCase())}</div>
+          <div class="avatar">
+            ${escapeHTML(user.name.charAt(0).toUpperCase())}
+          </div>
           <strong>${escapeHTML(user.name)}</strong>
         </div>
       </td>
       <td>${escapeHTML(user.email)}</td>
       <td>${escapeHTML(user.joined)}</td>
       <td>${Number(user.orders) || 0}</td>
-      <td><span class="status-pill status-${user.status.toLowerCase()}">${escapeHTML(user.status)}</span></td>
+      <td>
+        <span class="status-pill status-${user.status.toLowerCase()}">
+          ${escapeHTML(user.status)}
+        </span>
+      </td>
       <td>
         <div class="action-buttons">
           <button class="table-action" data-edit="${user.id}">Edit</button>
@@ -452,16 +501,28 @@ function renderUsers() {
   `).join("");
 }
 
+/* USER MODAL */
+
 function openUserModal(user = null) {
   const modal = document.getElementById("user-modal");
   const form = document.getElementById("user-form");
 
   form.reset();
-  document.getElementById("edit-user-id").value = user ? user.id : "";
-  document.getElementById("modal-title").textContent = user ? "Edit customer" : "Add new user";
-  document.getElementById("form-name").value = user ? user.name : "";
-  document.getElementById("form-email").value = user ? user.email : "";
-  document.getElementById("form-status").value = user ? user.status : "Active";
+
+  document.getElementById("edit-user-id").value =
+    user ? user.id : "";
+
+  document.getElementById("modal-title").textContent =
+    user ? "Edit customer" : "Add new user";
+
+  document.getElementById("form-name").value =
+    user ? user.name : "";
+
+  document.getElementById("form-email").value =
+    user ? user.email : "";
+
+  document.getElementById("form-status").value =
+    user ? user.status : "Active";
 
   modal.classList.add("open");
   modal.setAttribute("aria-hidden", "false");
@@ -485,7 +546,8 @@ function saveUser(event) {
   if (!name || !email) return;
 
   const duplicate = users.find(user =>
-    user.email.toLowerCase() === email && String(user.id) !== id
+    user.email.toLowerCase() === email &&
+    String(user.id) !== id
   );
 
   if (duplicate) {
@@ -499,6 +561,7 @@ function saveUser(event) {
         ? { ...user, name, email, status }
         : user
     );
+
     showToast("Customer profile updated.");
   } else {
     users.unshift({
@@ -509,6 +572,7 @@ function saveUser(event) {
       orders: 0,
       status
     });
+
     showToast("New customer added.");
   }
 
@@ -526,10 +590,12 @@ function deleteUser(id) {
   if (!confirm(`Delete ${user.name} from this demo customer list?`)) return;
 
   users = users.filter(item => String(item.id) !== String(id));
+
   saveUsers();
   renderUsers();
   renderUserStats();
   renderStats();
+
   showToast("Customer removed.");
 }
 
@@ -558,13 +624,15 @@ function downloadCSV(filename, rows) {
 
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
+
   link.href = url;
   link.download = filename;
+
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
 
+  URL.revokeObjectURL(url);
   showToast("CSV report downloaded.");
 }
 
@@ -572,16 +640,11 @@ function exportUsers() {
   downloadCSV("elora-customers.csv", [
     ["Name", "Email", "Joined", "Orders", "Status"],
     ...users.map(user => [
-      user.name, user.email, user.joined, user.orders, user.status
-    ])
-  ]);
-}
-
-function exportOrders() {
-  downloadCSV("elora-orders.csv", [
-    ["Order ID", "Customer", "Email", "Date", "Amount PKR", "Status"],
-    ...orders.map(order => [
-      order.id, order.name, order.email, order.date, order.amount, order.status
+      user.name,
+      user.email,
+      user.joined,
+      user.orders,
+      user.status
     ])
   ]);
 }
@@ -589,10 +652,15 @@ function exportOrders() {
 function exportReport() {
   downloadCSV("elora-store-report.csv", [
     ["Metric", "Value"],
-    ["Revenue from demo completed orders", orders.filter(order => order.status === "Completed").reduce((sum, order) => sum + order.amount, 0)],
+    ["Revenue from demo completed orders",
+      orders.filter(order => order.status === "Completed")
+        .reduce((sum, order) => sum + order.amount, 0)
+    ],
     ["Demo orders", orders.length],
     ["Demo customers", users.length],
-    ["Active customers", users.filter(user => user.status === "Active").length]
+    ["Active customers",
+      users.filter(user => user.status === "Active").length
+    ]
   ]);
 }
 
@@ -609,26 +677,38 @@ function navigateTo(sectionId) {
   });
 
   document.querySelectorAll("[data-section]").forEach(link => {
-    link.classList.toggle("active", link.dataset.section === sectionId ||
-      (sectionId === "orders" && link.dataset.section === "orders"));
+    link.classList.toggle(
+      "active",
+      link.dataset.section === sectionId
+    );
   });
 
   const titles = {
     overview: "Overview",
     analytics: "Analytics",
     users: "User management",
-    orders: "Recent orders"
+    orders: "Orders"
   };
 
   document.getElementById("breadcrumb-title").textContent =
     titles[sectionId] || "Overview";
 
+  history.replaceState(null, "", `#${sectionId}`);
+
+  document.getElementById("sidebar")?.classList.remove("mobile-open");
+
   if (sectionId === "orders") {
-    document.getElementById("orders")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById("orders")?.scrollIntoView({
+      behavior: "smooth",
+      block: "center"
+    });
   }
 
-  history.replaceState(null, "", `#${sectionId}`);
-  document.getElementById("sidebar").classList.remove("mobile-open");
+  requestAnimationFrame(() => {
+    [revenueChart, sourceChart, analyticsChart].forEach(chart => {
+      if (chart) chart.resize();
+    });
+  });
 }
 
 function setupNavigation() {
@@ -665,42 +745,62 @@ function setupNavigation() {
 /* INITIALIZATION */
 
 document.addEventListener("DOMContentLoaded", () => {
-  const savedTheme = localStorage.getItem(STORAGE.theme) || "light";
-  applyTheme(savedTheme);
+  const savedTheme = readStorage(STORAGE.theme, "light");
+  applyTheme(savedTheme || "light");
 
-  document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
-  document.getElementById("theme-sidebar")?.addEventListener("click", toggleTheme);
+  document.getElementById("theme-toggle")
+    ?.addEventListener("click", toggleTheme);
 
-  document.getElementById("add-user-button")?.addEventListener("click", () => openUserModal());
-  document.getElementById("modal-close")?.addEventListener("click", closeUserModal);
-  document.getElementById("cancel-user")?.addEventListener("click", closeUserModal);
-  document.getElementById("user-form")?.addEventListener("submit", saveUser);
+  document.getElementById("theme-sidebar")
+    ?.addEventListener("click", toggleTheme);
 
-  document.getElementById("user-modal")?.addEventListener("click", event => {
-    if (event.target.id === "user-modal") closeUserModal();
-  });
+  document.getElementById("add-user-button")
+    ?.addEventListener("click", () => openUserModal());
+
+  document.getElementById("modal-close")
+    ?.addEventListener("click", closeUserModal);
+
+  document.getElementById("cancel-user")
+    ?.addEventListener("click", closeUserModal);
+
+  document.getElementById("user-form")
+    ?.addEventListener("submit", saveUser);
+
+  document.getElementById("user-modal")
+    ?.addEventListener("click", event => {
+      if (event.target.id === "user-modal") closeUserModal();
+    });
 
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeUserModal();
   });
 
-  document.getElementById("user-search")?.addEventListener("input", renderUsers);
-  document.getElementById("user-status-filter")?.addEventListener("change", renderUsers);
+  document.getElementById("user-search")
+    ?.addEventListener("input", renderUsers);
 
-  document.getElementById("users-body")?.addEventListener("click", event => {
-    const edit = event.target.closest("[data-edit]");
-    const remove = event.target.closest("[data-delete]");
+  document.getElementById("user-status-filter")
+    ?.addEventListener("change", renderUsers);
 
-    if (edit) editUser(edit.dataset.edit);
-    if (remove) deleteUser(remove.dataset.delete);
-  });
+  document.getElementById("users-body")
+    ?.addEventListener("click", event => {
+      const edit = event.target.closest("[data-edit]");
+      const remove = event.target.closest("[data-delete]");
 
-  document.getElementById("user-export")?.addEventListener("click", exportUsers);
-  document.getElementById("export-report")?.addEventListener("click", exportReport);
-  document.getElementById("analytics-export")?.addEventListener("click", exportReport);
-  document.getElementById("view-all-orders")?.addEventListener("click", exportOrders);
+      if (edit) editUser(edit.dataset.edit);
+      if (remove) deleteUser(remove.dataset.delete);
+    });
+
+  document.getElementById("user-export")
+    ?.addEventListener("click", exportUsers);
+
+  document.getElementById("export-report")
+    ?.addEventListener("click", exportReport);
+
+  document.getElementById("analytics-export")
+    ?.addEventListener("click", exportReport);
 
   setupNavigation();
+
   renderStats();
   renderOrders();
   renderTopProducts();
@@ -716,6 +816,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const initialSection = location.hash.replace("#", "");
+
   if (["overview", "analytics", "users", "orders"].includes(initialSection)) {
     navigateTo(initialSection);
   }
